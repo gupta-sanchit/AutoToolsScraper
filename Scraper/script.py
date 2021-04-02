@@ -4,6 +4,7 @@ import json
 from bs4 import BeautifulSoup
 from pprint import pprint
 import pandas as pd
+from tqdm import tqdm
 
 
 class Scraper:
@@ -26,11 +27,9 @@ class Scraper:
         self.soup = BeautifulSoup(res.text, "lxml")
         self.scrapPage('ADAS')
 
-        pprint(self.res)
-
         df = pd.DataFrame(self.res).T.reset_index(drop=True)
         print(df)
-        df.to_csv('../sample.csv')
+        df.to_csv('../sampleFinal.csv', index=False)
 
     def description(self, url):
         res = requests.get(url, headers=self.headers)
@@ -40,43 +39,41 @@ class Scraper:
         for tag in x.find_all('strong'):
 
             if tag.text.lower() == 'features and benefits:':
-
                 tag.extract()
 
         desc = x.find('div', id='ProductDetail_ProductDetails_div')
-        # desc = desc.findAll(text=True)
-        #
-        # ans = ""
-        # for res in desc:
-        #     if res != '\n' and res != ' ':
-        #         ans += "\n" + res
-        #
-        # ans = re.sub(' +', ' ', ans)
-        return desc.text
+
+        code = x.find('span', class_='product_code').text
+
+        zoomPhoto = x.find('a', id='product_photo_zoom_url2')
+        if zoomPhoto:
+            imgURL = 'https:' + zoomPhoto['href']
+        else:
+            imgURL = 'https:' + x.find('img', id='product_photo')['src']
+
+        return code, desc, imgURL
 
     def scrapPage(self, category):
         productContainer = self.soup.findAll('div', class_='v-product')
         print(len(productContainer))
         r = {}
-        for one in productContainer:
+        for one in tqdm(productContainer):
             a = one.find('a', class_='v-product__img')
             descURL = a['href']
-            desc = self.description(descURL)
-            break
-            imageURL = 'https:' + a.img['src']
+
+            code, desc, imgURL = self.description(descURL)
             productName = a.img['title']
             productBrand = productName.split(' ')[0]
             price = one.find('div', class_='product_productprice').b.text.split(" ")[2]
 
-            # print(imageURL, productName, price)
-
             r = {
+                'product-code': code,
                 'product-category': category,
                 'ProductName': productName,
                 'price': price,
                 'brand': productBrand,
                 'Description': desc,
-                'ImageURL': imageURL
+                'ImageURL': imgURL
             }
             self.count += 1
 
