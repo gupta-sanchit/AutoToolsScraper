@@ -1,3 +1,4 @@
+import re
 import json
 import requests
 from bs4 import BeautifulSoup
@@ -5,7 +6,7 @@ from pprint import pprint
 import pandas as pd
 from tqdm import tqdm
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 class Scraper:
@@ -15,51 +16,30 @@ class Scraper:
 
         self.headers = {"Accept-Language": "en-US, en;q=0.5"}
 
-    def getURLS(self) -> 'store json':
-        url = {}
-        response = requests.get(self.url, headers=self.headers)
-        soup = BeautifulSoup(response.text, "lxml")
-
-        categories = soup.findAll('li', class_='nav')
-
-        for cat in categories:
-            url[cat.a.text] = cat.a['href']
-
-        with open('../data/URL.json', 'w') as fp:
-            json.dump(url, fp, indent=4)
-
     def scrapSite(self) -> 'store csv':
         with open('../data/URL.json', 'r') as fp:
             urls = json.load(fp)
-        idx = 0
-        for cat in urls.keys():
-            if idx == 2:
-                break
-            idx += 1
-            productsList = self.scrapCategory(category=cat, url=urls[cat])
-            self.res['data'] += productsList
+
+        with ThreadPoolExecutor(max_workers=20) as executor:
+
+            threads = []
+            for cat in urls.keys():
+                threads.append(executor.submit(self.scrapCategory, category=cat, url=urls[cat]))
+            # c = 0
+            t = len(threads)
+            for thread in tqdm(as_completed(threads), total=t):
+                # print("len ==> ", len(self.res['data']), end='\n')
+                # c += 1
+                # print(c, end='\n')
+                productsList = thread.result()
+                self.res['data'] += productsList
 
         df = pd.json_normalize(self.res['data'], max_level=0)
         print(df)
-        # pprint(self.res)
-        df.to_csv('../data/TEMP.csv', index=False)
-
-    def scrap(self):
-        res = requests.get('https://www.eautotools.com/Come-Alongs-Chain-Hoists-s/498.htm', headers=self.headers)
-        soup = BeautifulSoup(res.text, "lxml")
-        self.scrapCategory('Come-Alongs-Chain-Hoists')
-
-        res = requests.get('https://www.eautotools.com/Autel-ADAS-s/2478.htm', headers=self.headers)
-        soup = BeautifulSoup(res.text, "lxml")
-        self.scrapCategory('ADAS')
-
-        df = pd.json_normalize(self.res['data'], max_level=0)
-        print(df)
-        df.to_csv('../data/TEMP.csv', index=False)
+        df.to_csv('../data/Site1.csv', index=False)
 
     def productPage(self, url) -> 'tuple':
         res = requests.get(url, headers=self.headers)
-
         x = BeautifulSoup(res.text, "lxml")
 
         for tag in x.find_all('strong'):
@@ -75,20 +55,24 @@ class Scraper:
         if zoomPhoto:
             imgURL = 'https:' + zoomPhoto['href']
         else:
-            imgURL = 'https:' + x.find('img', id='product_photo')['src']
-
+            try:
+                imgURL = 'https:' + x.find('img', id='product_photo')['src']
+            except Exception as e:
+                print(e, url)
+                imgURL = x.find('a', id='product_photo_zoom_url')['href']
         return code, str(desc), imgURL
 
     def scrapCategory(self, url, category) -> 'list of json':
-
         response = requests.get(url, headers=self.headers)
+        # print('*********************************************************************' + category)
+        # print(url)
+        # print(response.text)
         soup = BeautifulSoup(response.text, "lxml")
 
         productContainer = soup.findAll('div', class_='v-product')
-        print(len(productContainer))
-
+        # print(f"{category} ==> {len(productContainer)}")
         products = []
-        for one in tqdm(productContainer):
+        for one in productContainer:
             a = one.find('a', class_='v-product__img')
             productURL = a['href']
 
@@ -108,10 +92,74 @@ class Scraper:
             }
 
             products.append(r)
+            # tqdm.write(f"\n{category} completed !!\n")
+            # print(f"{category} ==> completed")
         return products
+
+    def getURLS(self) -> 'store json':
+        url = {}
+        response = requests.get(self.url, headers=self.headers)
+        soup = BeautifulSoup(response.text, "lxml")
+
+        categories = soup.findAll('li', class_='nav')
+
+        for cat in categories:
+            catName = cat.a.text
+            BASE_URL = cat.a['href']
+            lastPage = self.number_of_pages(BASE_URL)
+
+            catUrlList = []
+            if lastPage == 0:
+                sub_urls = self.check_subCat(BASE_URL)
+                if len(sub_urls) != 0:
+                    for i in sub_urls:
+                        pCount = self.number_of_pages(i)
+                        for j in range(1, pCount + 1):
+                            URL = i + f"&page={j}"
+                            catUrlList.append(URL)
+                else:
+                    pass
+            else:
+                for i in range(1, lastPage + 1):
+                    URL = BASE_URL + f"&page={i}"
+                    catUrlList.append(URL)
+            url[catName] = catUrlList
+
+        with open('../data/URL.json', 'w') as fp:
+            json.dump(url, fp, indent=4)
+
+    def check_subCat(self, BASE_URL):
+
+        response = requests.get(BASE_URL, headers=self.headers)
+        soup = BeautifulSoup(response.text, "lxml")
+
+        subCat = soup.findAll('a', class_='subcategory_link')
+
+        urls = []
+        if len(subCat) != 0:
+            for i in subCat:
+                urls.append(i['href'])
+        return urls
+
+    def number_of_pages(self, url) -> 'int':
+        response = requests.get(url, headers=self.headers)
+        soup = BeautifulSoup(response.text, "lxml")
+
+        x = soup.find('input', title='Go to page')
+
+        if x is None:
+            print(f"SubCat Check for URL ==> {url}")
+            return 0
+
+        lastPage = x.parent.text.strip()
+        lastPage = re.findall(r'\d+', lastPage)
+        lastPage = list(map(int, lastPage))
+
+        return lastPage[len(lastPage) - 1]
 
 
 if __name__ == '__main__':
     s = Scraper()
     # s.scrap()
-    s.scrapSite()
+    # s.scrapSite()
+    s.getURLS()
