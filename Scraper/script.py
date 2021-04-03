@@ -21,34 +21,27 @@ class Scraper:
             urls = json.load(fp)
 
         with ThreadPoolExecutor(max_workers=20) as executor:
-
             threads = []
             for cat in urls.keys():
-                threads.append(executor.submit(self.scrapCategory, category=cat, url=urls[cat]))
-            # c = 0
-            t = len(threads)
-            for thread in tqdm(as_completed(threads), total=t):
-                # print("len ==> ", len(self.res['data']), end='\n')
-                # c += 1
-                # print(c, end='\n')
+                for i in urls[cat]:
+                    threads.append(executor.submit(self.scrapCategory, category=cat, url=i))
+            for thread in tqdm(as_completed(threads), total=len(threads)):
                 productsList = thread.result()
                 self.res['data'] += productsList
 
         df = pd.json_normalize(self.res['data'], max_level=0)
         print(df)
-        df.to_csv('../data/Site1.csv', index=False)
+        df.to_csv('../data/Site.csv', index=False)
 
     def productPage(self, url) -> 'tuple':
         res = requests.get(url, headers=self.headers)
         x = BeautifulSoup(res.text, "lxml")
 
         for tag in x.find_all('strong'):
-
             if tag.text.lower() == 'features and benefits:':
                 tag.extract()
 
         desc = x.find('div', id='ProductDetail_ProductDetails_div')
-
         code = x.find('span', class_='product_code').text
 
         zoomPhoto = x.find('a', id='product_photo_zoom_url2')
@@ -65,12 +58,9 @@ class Scraper:
     def scrapCategory(self, url, category) -> 'list of json':
         response = requests.get(url, headers=self.headers)
         # print('*********************************************************************' + category)
-        # print(url)
-        # print(response.text)
         soup = BeautifulSoup(response.text, "lxml")
 
         productContainer = soup.findAll('div', class_='v-product')
-        # print(f"{category} ==> {len(productContainer)}")
         products = []
         for one in productContainer:
             a = one.find('a', class_='v-product__img')
@@ -160,6 +150,6 @@ class Scraper:
 
 if __name__ == '__main__':
     s = Scraper()
-    # s.scrap()
-    # s.scrapSite()
-    s.getURLS()
+    # s.getURLS()
+    s.scrapSite()
+# 12 46
