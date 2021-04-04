@@ -1,40 +1,63 @@
 import re
 import json
 import requests
-from bs4 import BeautifulSoup
 from pprint import pprint
+from bs4 import BeautifulSoup
 import pandas as pd
 from tqdm import tqdm
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, ProcessPoolExecutor
 
 
 class Scraper:
     def __init__(self):
         self.res = {'data': []}
         self.url = 'https://www.eautotools.com/category-s/1748.htm'
-
         self.headers = {"Accept-Language": "en-US, en;q=0.5"}
 
     def scrapSite(self) -> 'store csv':
         with open('../data/URL.json', 'r') as fp:
             urls = json.load(fp)
 
-        with ThreadPoolExecutor(max_workers=20) as executor:
+        with ProcessPoolExecutor() as executor:
             threads = []
+            idx = 0
             for cat in urls.keys():
-                for i in urls[cat]:
-                    threads.append(executor.submit(self.scrapCategory, category=cat, url=i))
+                if idx == 20:
+                    break
+                idx += 1
+                threads.append(executor.submit(self.handleCategory, category=cat, url_List=urls[cat]))
             for thread in tqdm(as_completed(threads), total=len(threads)):
-                productsList = thread.result()
-                self.res['data'] += productsList
+                category, productList = thread.result()
+                self.res['data'] += productList
+                print(f"\nCOMPLETED ==> {category}", end='\n')
+        try:
+            with open('../data/products.json', 'w') as fp:
+                json.dump(self.res, fp, indent=4)
+        except BaseException as e:
+            print(e)
 
         df = pd.json_normalize(self.res['data'], max_level=0)
         print(df)
         df.to_csv('../data/Site.csv', index=False)
 
+    def handleCategory(self, category, url_List):
+
+        catProductList = []
+        with ThreadPoolExecutor(max_workers=20) as executor:
+            threads = []
+            for url in url_List:
+                threads.append(executor.submit(self.scrapCategory, category=category, url=url))
+            for thread in as_completed(threads):
+                catProductList += thread.result()
+
+        return category, catProductList
+
     def productPage(self, url) -> 'tuple':
-        res = requests.get(url, headers=self.headers)
+        # res = requests.get(url, headers=self.headers)
+        res = self.getResponse(url)
         x = BeautifulSoup(res.text, "lxml")
 
         for tag in x.find_all('strong'):
@@ -56,8 +79,7 @@ class Scraper:
         return code, str(desc), imgURL
 
     def scrapCategory(self, url, category) -> 'list of json':
-        response = requests.get(url, headers=self.headers)
-        # print('*********************************************************************' + category)
+        response = self.getResponse(url)
         soup = BeautifulSoup(response.text, "lxml")
 
         productContainer = soup.findAll('div', class_='v-product')
@@ -82,8 +104,6 @@ class Scraper:
             }
 
             products.append(r)
-            # tqdm.write(f"\n{category} completed !!\n")
-            # print(f"{category} ==> completed")
         return products
 
     def getURLS(self) -> 'store json':
@@ -147,9 +167,19 @@ class Scraper:
 
         return lastPage[len(lastPage) - 1]
 
+    def getResponse(self, url):
+        # session = requests.Session()
+        # retry = Retry(connect=5, backoff_factor=2, status_forcelist=[502, 503, 504])
+        # adapter = HTTPAdapter(max_retries=retry)
+        # session.mount('http://', adapter)
+        # session.mount('https://', adapter)
+
+        response = requests.get(url, headers=self.headers)
+        return response
+
 
 if __name__ == '__main__':
     s = Scraper()
     # s.getURLS()
     s.scrapSite()
-# 12 46
+
