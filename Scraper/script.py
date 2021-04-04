@@ -21,16 +21,12 @@ class Scraper:
         with open('../data/URL.json', 'r') as fp:
             urls = json.load(fp)
 
-        with ProcessPoolExecutor() as executor:
-            threads = []
-            idx = 0
+        with ProcessPoolExecutor(4) as executor:
+            processes = []
             for cat in urls.keys():
-                if idx == 20:
-                    break
-                idx += 1
-                threads.append(executor.submit(self.handleCategory, category=cat, url_List=urls[cat]))
-            for thread in tqdm(as_completed(threads), total=len(threads)):
-                category, productList = thread.result()
+                processes.append(executor.submit(self.handleCategory, category=cat, url_List=urls[cat]))
+            for process in tqdm(as_completed(processes), total=len(processes)):
+                category, productList = process.result()
                 self.res['data'] += productList
                 print(f"\nCOMPLETED ==> {category}", end='\n')
         try:
@@ -56,7 +52,6 @@ class Scraper:
         return category, catProductList
 
     def productPage(self, url) -> 'tuple':
-        # res = requests.get(url, headers=self.headers)
         res = self.getResponse(url)
         x = BeautifulSoup(res.text, "lxml")
 
@@ -73,8 +68,8 @@ class Scraper:
         else:
             try:
                 imgURL = 'https:' + x.find('img', id='product_photo')['src']
-            except Exception as e:
-                print(e, url)
+            except BaseException as e:
+                # print(e, url)
                 imgURL = x.find('a', id='product_photo_zoom_url')['href']
         return code, str(desc), imgURL
 
@@ -173,7 +168,6 @@ class Scraper:
         # adapter = HTTPAdapter(max_retries=retry)
         # session.mount('http://', adapter)
         # session.mount('https://', adapter)
-
         response = requests.get(url, headers=self.headers)
         return response
 
@@ -182,4 +176,3 @@ if __name__ == '__main__':
     s = Scraper()
     # s.getURLS()
     s.scrapSite()
-
