@@ -21,10 +21,11 @@ class Scraper:
         with open('../data/URL.json', 'r') as fp:
             urls = json.load(fp)
 
-        with ProcessPoolExecutor(4) as executor:
+        with ThreadPoolExecutor(5) as executor:
             processes = []
             for cat in urls.keys():
-                processes.append(executor.submit(self.handleCategory, category=cat, url_List=urls[cat]))
+                for url in urls[cat]:
+                    processes.append(executor.submit(self.scrapCategory, url=url, category = cat))
             for process in tqdm(as_completed(processes), total=len(processes)):
                 category, productList = process.result()
                 self.res['data'] += productList
@@ -73,7 +74,7 @@ class Scraper:
                 imgURL = x.find('a', id='product_photo_zoom_url')['href']
         return code, str(desc), imgURL
 
-    def scrapCategory(self, url, category) -> 'list of json':
+    def scrapCategory(self, url, category) -> 'tuple':
         response = self.getResponse(url)
         soup = BeautifulSoup(response.text, "lxml")
 
@@ -99,7 +100,7 @@ class Scraper:
             }
 
             products.append(r)
-        return products
+        return category, products
 
     def getURLS(self) -> 'store json':
         url = {}
