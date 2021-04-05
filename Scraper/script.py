@@ -21,11 +21,12 @@ class Scraper:
         with open('../data/URL.json', 'r') as fp:
             urls = json.load(fp)
 
-        with ProcessPoolExecutor(4) as executor:
+        with ThreadPoolExecutor() as executor:
             processes = []
             for cat in urls.keys():
-                processes.append(executor.submit(self.handleCategory, category=cat, url_List=urls[cat]))
-            for process in tqdm(as_completed(processes), total=len(processes)):
+                for url in urls[cat]:
+                    processes.append(executor.submit(self.scrapCategory, url = url, category = cat))
+            for process in tqdm(as_completed(processes), total=len(processes), desc = 'MAIN'):
                 category, productList = process.result()
                 self.res['data'] += productList
                 print(f"\nCOMPLETED ==> {category}", end='\n')
@@ -42,7 +43,7 @@ class Scraper:
     def handleCategory(self, category, url_List):
 
         catProductList = []
-        with ThreadPoolExecutor(max_workers=20) as executor:
+        with ThreadPoolExecutor() as executor:
             threads = []
             for url in url_List:
                 threads.append(executor.submit(self.scrapCategory, category=category, url=url))
@@ -99,7 +100,7 @@ class Scraper:
             }
 
             products.append(r)
-        return products
+        return category, products
 
     def getURLS(self) -> 'store json':
         url = {}
@@ -163,11 +164,11 @@ class Scraper:
         return lastPage[len(lastPage) - 1]
 
     def getResponse(self, url):
-        # session = requests.Session()
-        # retry = Retry(connect=5, backoff_factor=2, status_forcelist=[502, 503, 504])
-        # adapter = HTTPAdapter(max_retries=retry)
-        # session.mount('http://', adapter)
-        # session.mount('https://', adapter)
+        session = requests.Session()
+        retry = Retry(connect=5, backoff_factor=2, status_forcelist=[502, 503, 504])
+        adapter = HTTPAdapter(max_retries=retry)
+        session.mount('http://', adapter)
+        session.mount('https://', adapter)
         response = requests.get(url, headers=self.headers)
         return response
 
