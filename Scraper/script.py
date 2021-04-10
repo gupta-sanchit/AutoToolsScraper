@@ -21,12 +21,15 @@ class Scraper:
         with open('../data/URL.json', 'r') as fp:
             urls = json.load(fp)
 
-        with ThreadPoolExecutor(5) as executor:
-            processes = []
+        with ThreadPoolExecutor() as executor:
+            threads = []
+            idx = 0
             for cat in urls.keys():
                 for url in urls[cat]:
-                    processes.append(executor.submit(self.scrapCategory, url=url, category = cat))
-            for process in tqdm(as_completed(processes), total=len(processes)):
+                    if idx == 5: break
+                    idx += 1
+                    threads.append(executor.submit(self.scrapCategory, url=url, category=cat))
+            for process in tqdm(as_completed(threads), total=len(threads)):
                 category, productList = process.result()
                 self.res['data'] += productList
                 print(f"\nCOMPLETED ==> {category}", end='\n')
@@ -38,7 +41,7 @@ class Scraper:
 
         df = pd.json_normalize(self.res['data'], max_level=0)
         print(df)
-        df.to_csv('../data/Site.csv', index=False)
+        df.to_csv('../data/TEMP.csv', index=False)
 
     def handleCategory(self, category, url_List):
 
@@ -64,15 +67,17 @@ class Scraper:
         code = x.find('span', class_='product_code').text
 
         zoomPhoto = x.find('a', id='product_photo_zoom_url2')
+
+        brand = x.find('meta', itemprop='manufacturer')['content']
         if zoomPhoto:
             imgURL = 'https:' + zoomPhoto['href']
         else:
             try:
                 imgURL = 'https:' + x.find('img', id='product_photo')['src']
-            except BaseException as e:
+            except TypeError as e:
                 # print(e, url)
                 imgURL = x.find('a', id='product_photo_zoom_url')['href']
-        return code, str(desc), imgURL
+        return code, str(desc), imgURL, brand
 
     def scrapCategory(self, url, category) -> 'tuple':
         response = self.getResponse(url)
@@ -84,9 +89,9 @@ class Scraper:
             a = one.find('a', class_='v-product__img')
             productURL = a['href']
 
-            code, desc, imgURL = self.productPage(productURL)
+            code, desc, imgURL, productBrand = self.productPage(productURL)
             productName = a.img['title']
-            productBrand = productName.split(' ')[0]
+            # productBrand = productName.split(' ')[0]
             price = one.find('div', class_='product_productprice').b.text.split(" ")[2]
 
             r = {
