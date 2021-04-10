@@ -75,7 +75,7 @@ class Scraper:
             try:
                 imgURL = 'https:' + x.find('img', id='product_photo')['src']
             except TypeError as e:
-                # print(e, url)
+                print(e, url)
                 imgURL = x.find('a', id='product_photo_zoom_url')['href']
         return code, str(desc), imgURL, brand
 
@@ -91,7 +91,6 @@ class Scraper:
 
             code, desc, imgURL, productBrand = self.productPage(productURL)
             productName = a.img['title']
-            # productBrand = productName.split(' ')[0]
             price = one.find('div', class_='product_productprice').b.text.split(" ")[2]
 
             r = {
