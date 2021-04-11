@@ -18,17 +18,25 @@ class Scraper:
         self.headers = {"Accept-Language": "en-US, en;q=0.5"}
 
     def scrapSite(self) -> 'store csv':
-        with open('../data/URL.json', 'r') as fp:
+        with open('../data/URL1.json', 'r') as fp:
             urls = json.load(fp)
 
-        with ThreadPoolExecutor() as executor:
+        with ThreadPoolExecutor(max_workers=20) as executor:
             threads = []
             idx = 0
             for cat in urls.keys():
-                for url in urls[cat]:
-                    if idx == 5: break
-                    idx += 1
-                    threads.append(executor.submit(self.scrapCategory, url=url, category=cat))
+                x = urls[cat]
+                if isinstance(x, dict):
+                    for subcat in x.keys():
+                        for url in x[subcat]:
+                            if idx == 50: break
+                            idx += 1
+                            threads.append(executor.submit(self.scrapCategory, url=url, category=cat, subcat=subcat))
+                else:
+                    for url in x:
+                        if idx == 50: break
+                        idx += 1
+                        threads.append(executor.submit(self.scrapCategory, url=url, category=cat))
             for process in tqdm(as_completed(threads), total=len(threads)):
                 category, productList = process.result()
                 self.res['data'] += productList
@@ -79,7 +87,7 @@ class Scraper:
                 imgURL = x.find('a', id='product_photo_zoom_url')['href']
         return code, str(desc), imgURL, brand
 
-    def scrapCategory(self, url, category) -> 'tuple':
+    def scrapCategory(self, url, category, subcat=None) -> 'tuple':
         response = self.getResponse(url)
         soup = BeautifulSoup(response.text, "lxml")
 
@@ -92,10 +100,10 @@ class Scraper:
             code, desc, imgURL, productBrand = self.productPage(productURL)
             productName = a.img['title']
             price = one.find('div', class_='product_productprice').b.text.split(" ")[2]
-
+            categoryName = f"{category} > {subcat}" if subcat else category
             r = {
                 'product-code': code,
-                'product-category': category,
+                'product-category': categoryName,
                 'ProductName': productName,
                 'price': price,
                 'brand': productBrand,
@@ -104,6 +112,7 @@ class Scraper:
             }
 
             products.append(r)
+        # print(category)
         return category, products
 
     def getURLS(self) -> 'store json':
@@ -131,7 +140,7 @@ class Scraper:
                     pass
             else:
                 for i in range(1, lastPage + 1):
-                    URL = BASE_URL + f"&page={i}"
+                    URL = BASE_URL + f"?searching=Y&sort=1&cat=1&page={i}"
                     catUrlList.append(URL)
             url[catName] = catUrlList
 
