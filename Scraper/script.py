@@ -1,14 +1,12 @@
-import re
 import json
-import requests
-from pprint import pprint
-from bs4 import BeautifulSoup
 import pandas as pd
+from time import time
 from tqdm import tqdm
+from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
+from requests_futures.sessions import FuturesSession
 from requests.packages.urllib3.util.retry import Retry
-
-from concurrent.futures import ThreadPoolExecutor, as_completed, ProcessPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 class Scraper:
@@ -17,28 +15,29 @@ class Scraper:
         self.url = 'https://www.eautotools.com/category-s/1748.htm'
         self.headers = {"Accept-Language": "en-US, en;q=0.5"}
 
+        self.session = FuturesSession(executor=ThreadPoolExecutor())
+        retry = Retry(connect=5, backoff_factor=2, status_forcelist=[502, 503, 504])
+        adapter = HTTPAdapter(max_retries=retry)
+        self.session.mount('http://', adapter)
+        self.session.mount('https://', adapter)
+
     def scrapSite(self) -> 'store csv':
-        with open('../data/URL1.json', 'r') as fp:
+        with open('../data/URL.json', 'r') as fp:
             urls = json.load(fp)
 
-        with ThreadPoolExecutor(max_workers=20) as executor:
+        with ThreadPoolExecutor() as executor:
             threads = []
-            idx = 0
             for cat in urls.keys():
                 x = urls[cat]
                 if isinstance(x, dict):
                     for subcat in x.keys():
                         for url in x[subcat]:
-                            if idx == 50: break
-                            idx += 1
                             threads.append(executor.submit(self.scrapCategory, url=url, category=cat, subcat=subcat))
                 else:
                     for url in x:
-                        if idx == 50: break
-                        idx += 1
                         threads.append(executor.submit(self.scrapCategory, url=url, category=cat))
-            for process in tqdm(as_completed(threads), total=len(threads)):
-                category, productList = process.result()
+            for thread in tqdm(as_completed(threads), total=len(threads)):
+                category, productList = thread.result()
                 self.res['data'] += productList
                 print(f"\nCOMPLETED ==> {category}", end='\n')
         try:
@@ -49,12 +48,12 @@ class Scraper:
 
         df = pd.json_normalize(self.res['data'], max_level=0)
         print(df)
-        df.to_csv('../data/TEMP.csv', index=False)
+        df.to_csv('../data/Site.csv', index=False)
 
     def handleCategory(self, category, url_List):
 
         catProductList = []
-        with ThreadPoolExecutor(max_workers=20) as executor:
+        with ThreadPoolExecutor() as executor:
             threads = []
             for url in url_List:
                 threads.append(executor.submit(self.scrapCategory, category=category, url=url))
@@ -77,6 +76,10 @@ class Scraper:
         zoomPhoto = x.find('a', id='product_photo_zoom_url2')
 
         brand = x.find('meta', itemprop='manufacturer')['content']
+
+        listPriceDiv = x.find('div', class_='product_listprice')
+        listPrice = listPriceDiv.b.text.split(" ")[2] if listPriceDiv else 'NA'
+
         if zoomPhoto:
             imgURL = 'https:' + zoomPhoto['href']
         else:
@@ -85,7 +88,7 @@ class Scraper:
             except TypeError as e:
                 print(e, url)
                 imgURL = x.find('a', id='product_photo_zoom_url')['href']
-        return code, str(desc), imgURL, brand
+        return code, str(desc), imgURL, brand, listPrice
 
     def scrapCategory(self, url, category, subcat=None) -> 'tuple':
         response = self.getResponse(url)
@@ -97,96 +100,34 @@ class Scraper:
             a = one.find('a', class_='v-product__img')
             productURL = a['href']
 
-            code, desc, imgURL, productBrand = self.productPage(productURL)
-            productName = a.img['title']
-            price = one.find('div', class_='product_productprice').b.text.split(" ")[2]
+            code, desc, imgURL, productBrand, listPrice = self.productPage(productURL)
+            # productName = one.find('div', class_ = 'v-product__details').a.text
+            productName = one.find('a', class_='v-product__title').text
+            yourPrice = one.find('div', class_='product_productprice').b.text.split(" ")[2]
             categoryName = f"{category} > {subcat}" if subcat else category
             r = {
                 'product-code': code,
                 'product-category': categoryName,
                 'ProductName': productName,
-                'price': price,
+                'list-price': listPrice,
+                'your-price': yourPrice,
                 'brand': productBrand,
                 'Description': desc,
                 'ImageURL': imgURL
             }
 
             products.append(r)
-        # print(category)
         return category, products
 
-    def getURLS(self) -> 'store json':
-        url = {}
-        response = requests.get(self.url, headers=self.headers)
-        soup = BeautifulSoup(response.text, "lxml")
-
-        categories = soup.findAll('li', class_='nav')
-
-        for cat in categories:
-            catName = cat.a.text
-            BASE_URL = cat.a['href']
-            lastPage = self.number_of_pages(BASE_URL)
-
-            catUrlList = []
-            if lastPage == 0:
-                sub_urls = self.check_subCat(BASE_URL)
-                if len(sub_urls) != 0:
-                    for i in sub_urls:
-                        pCount = self.number_of_pages(i)
-                        for j in range(1, pCount + 1):
-                            URL = i + f"&page={j}"
-                            catUrlList.append(URL)
-                else:
-                    pass
-            else:
-                for i in range(1, lastPage + 1):
-                    URL = BASE_URL + f"?searching=Y&sort=1&cat=1&page={i}"
-                    catUrlList.append(URL)
-            url[catName] = catUrlList
-
-        with open('../data/URL.json', 'w') as fp:
-            json.dump(url, fp, indent=4)
-
-    def check_subCat(self, BASE_URL):
-
-        response = requests.get(BASE_URL, headers=self.headers)
-        soup = BeautifulSoup(response.text, "lxml")
-
-        subCat = soup.findAll('a', class_='subcategory_link')
-
-        urls = []
-        if len(subCat) != 0:
-            for i in subCat:
-                urls.append(i['href'])
-        return urls
-
-    def number_of_pages(self, url) -> 'int':
-        response = requests.get(url, headers=self.headers)
-        soup = BeautifulSoup(response.text, "lxml")
-
-        x = soup.find('input', title='Go to page')
-
-        if x is None:
-            print(f"SubCat Check for URL ==> {url}")
-            return 0
-
-        lastPage = x.parent.text.strip()
-        lastPage = re.findall(r'\d+', lastPage)
-        lastPage = list(map(int, lastPage))
-
-        return lastPage[len(lastPage) - 1]
-
     def getResponse(self, url):
-        # session = requests.Session()
-        # retry = Retry(connect=5, backoff_factor=2, status_forcelist=[502, 503, 504])
-        # adapter = HTTPAdapter(max_retries=retry)
-        # session.mount('http://', adapter)
-        # session.mount('https://', adapter)
-        response = requests.get(url, headers=self.headers)
-        return response
+        response = self.session.get(url, headers=self.headers)
+        return response.result()
 
 
 if __name__ == '__main__':
+    start = time()
+
     s = Scraper()
-    # s.getURLS()
     s.scrapSite()
+
+    print(f'TIME TAKEN ==> {time() - start}')

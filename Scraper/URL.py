@@ -6,7 +6,6 @@ from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from Scraper.script import Scraper
-from pprint import pprint
 
 
 class URLS(Scraper):
@@ -28,7 +27,7 @@ class URLS(Scraper):
             for thread in tqdm(as_completed(threads), total=len(threads)):
                 data, cat = thread.result()
                 self.data[cat] = data
-        with open('../data/URL1.json', 'w') as fp:
+        with open('../data/URL.json', 'w') as fp:
             json.dump(self.data, fp, indent=4)
 
     def category(self, cat) -> 'store json':
