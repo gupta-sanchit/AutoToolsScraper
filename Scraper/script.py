@@ -80,6 +80,17 @@ class Scraper:
         listPriceDiv = x.find('div', class_='product_listprice')
         listPrice = listPriceDiv.b.text.split(" ")[2] if listPriceDiv else 'NA'
 
+        catContainer = x.find('td', class_='vCSS_breadcrumb_td')
+
+        cats = catContainer.findAll('a')
+
+        cat = ''
+        for i in range(2, len(cats)):
+            cat += cats[i].text + ' >' if i != len(cats) - 1 else cats[i].text
+
+        cat = cat.strip()
+        cat = cat.replace(',', '-')
+        cat = cat.replace('/', '-')
         if zoomPhoto:
             imgURL = 'https:' + zoomPhoto['href']
         else:
@@ -88,7 +99,7 @@ class Scraper:
             except TypeError as e:
                 print(e, url)
                 imgURL = x.find('a', id='product_photo_zoom_url')['href']
-        return code, str(desc), imgURL, brand, listPrice
+        return code, str(desc), imgURL, brand, listPrice, cat
 
     def scrapCategory(self, url, category, subcat=None) -> 'tuple':
         response = self.getResponse(url)
@@ -100,14 +111,14 @@ class Scraper:
             a = one.find('a', class_='v-product__img')
             productURL = a['href']
 
-            code, desc, imgURL, productBrand, listPrice = self.productPage(productURL)
+            code, desc, imgURL, productBrand, listPrice, cat = self.productPage(productURL)
             # productName = one.find('div', class_ = 'v-product__details').a.text
             productName = one.find('a', class_='v-product__title').text
             yourPrice = one.find('div', class_='product_productprice').b.text.split(" ")[2]
             categoryName = f"{category} > {subcat}" if subcat else category
             r = {
                 'product-code': code,
-                'product-category': categoryName,
+                'product-category': cat,
                 'ProductName': productName,
                 'list-price': listPrice,
                 'your-price': yourPrice,
