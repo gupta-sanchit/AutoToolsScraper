@@ -27,7 +27,10 @@ class Scraper:
 
         with ThreadPoolExecutor() as executor:
             threads = []
+            idx = 0
             for cat in urls.keys():
+                if idx == 11: break
+                idx += 1
                 x = urls[cat]
                 if isinstance(x, dict):
                     for subcat in x.keys():
@@ -48,7 +51,7 @@ class Scraper:
 
         df = pd.json_normalize(self.res['data'], max_level=0)
         print(df)
-        df.to_csv('../data/Site.csv', index=False)
+        df.to_csv('../data/Sample.csv', index=False)
 
     def handleCategory(self, category, url_List):
 
@@ -71,6 +74,10 @@ class Scraper:
                 tag.extract()
 
         desc = x.find('div', id='ProductDetail_ProductDetails_div')
+        specs = x.find('div', id='ProductDetail_TechSpecs_div')
+
+        specs = specs if specs else ''
+
         code = x.find('span', class_='product_code').text
 
         zoomPhoto = x.find('a', id='product_photo_zoom_url2')
@@ -99,7 +106,7 @@ class Scraper:
             except TypeError as e:
                 print(e, url)
                 imgURL = x.find('a', id='product_photo_zoom_url')['href']
-        return code, str(desc), imgURL, brand, listPrice, cat
+        return code, str(desc), imgURL, brand, listPrice, cat, str(specs)
 
     def scrapCategory(self, url, category, subcat=None) -> 'tuple':
         response = self.getResponse(url)
@@ -111,11 +118,9 @@ class Scraper:
             a = one.find('a', class_='v-product__img')
             productURL = a['href']
 
-            code, desc, imgURL, productBrand, listPrice, cat = self.productPage(productURL)
-            # productName = one.find('div', class_ = 'v-product__details').a.text
-            productName = one.find('a', class_='v-product__title').text
+            code, desc, imgURL, productBrand, listPrice, cat, specs = self.productPage(productURL)
+            productName = one.find('a', class_='v-product__title').text.strip()
             yourPrice = one.find('div', class_='product_productprice').b.text.split(" ")[2]
-            categoryName = f"{category} > {subcat}" if subcat else category
             r = {
                 'product-code': code,
                 'product-category': cat,
@@ -124,6 +129,7 @@ class Scraper:
                 'your-price': yourPrice,
                 'brand': productBrand,
                 'Description': desc,
+                'Specifications': specs,
                 'ImageURL': imgURL
             }
 
