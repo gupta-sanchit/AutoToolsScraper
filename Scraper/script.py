@@ -27,10 +27,10 @@ class Scraper:
 
         with ThreadPoolExecutor() as executor:
             threads = []
-            idx = 0
+            # idx = 0
             for cat in urls.keys():
-                if idx == 11: break
-                idx += 1
+                # if idx == 11: break
+                # idx += 1
                 x = urls[cat]
                 if isinstance(x, dict):
                     for subcat in x.keys():
@@ -51,7 +51,7 @@ class Scraper:
 
         df = pd.json_normalize(self.res['data'], max_level=0)
         print(df)
-        df.to_csv('../data/Sample.csv', index=False)
+        df.to_csv('../data/Site.csv', index=False)
 
     def handleCategory(self, category, url_List):
 
